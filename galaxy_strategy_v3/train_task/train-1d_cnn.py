@@ -6,19 +6,24 @@ import random
 
 def get_symbol(num_class):
     data = mx.sym.Variable('data')
-    fc1 = mx.sym.FullyConnected(data=data, num_hidden=512, name='fc1')
-    bn1 = mx.sym.BatchNorm(data=fc1, fix_gamma=False, eps=2e-5, momentum=0.99, name='bn1')
+    cn1 = mx.sym.Convolution(data=data, kernel=(10, ), num_filter=128, name='cn1')
+    bn1 = mx.sym.BatchNorm(data=cn1, fix_gamma=False, eps=2e-5, momentum=0.9, name='bn1')
     ac1 = mx.sym.Activation(data=bn1, act_type='relu', name='ac1')
+    pool1 = mx.symbol.Pooling(data=ac1, pool_type="max", kernel=(7, ), stride=(4, ), name="pool1")
 
-    fc2 = mx.sym.FullyConnected(data=ac1, num_hidden=1024, name='fc2')
-    bn2 = mx.sym.BatchNorm(data=fc2, fix_gamma=False, eps=2e-5, momentum=0.99, name='bn2')
+    cn2 = mx.sym.Convolution(data=pool1, kernel=(5,), num_filter=256, name='cn2')
+    bn2 = mx.sym.BatchNorm(data=cn2, fix_gamma=False, eps=2e-5, momentum=0.9, name='bn2')
     ac2 = mx.sym.Activation(data=bn2, act_type='relu', name='ac2')
+    pool2 = mx.symbol.Pooling(data=ac2, pool_type="max", kernel=(5, ), stride=(3, ), name="pool2")
 
-    fc3 = mx.sym.FullyConnected(data=ac2, num_hidden=2048, name='fc3')
-    bn3 = mx.sym.BatchNorm(data=fc3, fix_gamma=False, eps=2e-5, momentum=0.99, name='bn3')
-    ac3 = mx.sym.Activation(data=bn3, act_type='relu', name='ac3')
+    cn3 = mx.sym.Convolution(data=pool2, kernel=(4,), num_filter=512, name='cn3')
+    bn3 = mx.sym.BatchNorm(data=cn3, fix_gamma=False, eps=2e-5, momentum=0.9, name='bn3')
+    ac3 = mx.sym.Activation(data=bn3, act_type='relu', name='ac2')
+    pool3 = mx.symbol.Pooling(data=ac3, pool_type="max", kernel=(2,), name="pool3")
 
-    fc4 = mx.sym.FullyConnected(data=ac3, num_hidden=1024, name='fc4')
+    fla = mx.sym.Flatten(data=pool3)
+
+    fc4 = mx.sym.FullyConnected(data=fla, num_hidden=1024, name='fc4')
     bn4 = mx.sym.BatchNorm(data=fc4, fix_gamma=False, eps=2e-5, momentum=0.99, name='bn4')
     ac4 = mx.sym.Activation(data=bn4, act_type='relu', name='ac4')
 
@@ -30,7 +35,7 @@ def get_symbol(num_class):
 class Param(object):
     def __init__(self):
         self.batch_size = 16
-        self.record_len = 721
+        self.record_len = 725
         self.learn_rate = 0.01
         self.seq_len = 3360
         self.end_lr = 0.00001
@@ -39,17 +44,17 @@ class Param(object):
         self.wd = 0.00005
         self.moment = 0.9
         self.gpu = 2
-        self.frequent = 40
+        self.frequent = 20
         self.global_step = int(self.record_len / self.batch_size * self.epoch)
-        self.save_model_name = './d/project/mlp_data/model/model_name'
+        self.save_model_name = './d/project/rnn_data/model/model_name'
 
 
 if __name__ == '__main__':
     param = Param()
     head = '%(asctime)-15s %(message)s'
     logging.basicConfig(level=logging.DEBUG, format=head)
-    idx_file = '/home/yulongwu/d/project/rnn_data/train_idx.txt'
-    rec_file = '/home/yulongwu/d/project/rnn_data/train_rec_data.rec'
+    idx_file = './d/project/rnn_data/train_idx.txt'
+    rec_file = './d/project/rnn_data/train_rec_data.rec'
     batch_size = param.batch_size
     idx_range = param.record_len
     label_list = []
@@ -61,17 +66,20 @@ if __name__ == '__main__':
         item = record.read_idx(idx)
         header, data = mx.recordio.unpack(item)
         label = np.array(header.label)
+        label = np.hstack((label, np.zeros(3)))
+        label = label.reshape(4, -1)
         data = np.frombuffer(data, np.float32)
-        data = (data - data.mean()) / data.std()
+        data = data.reshape(-1, param.seq_len)
         # data = data[-seq_len:]
-        label_add_data = np.concatenate((label, data), axis=0)
+        label_add_data = np.concatenate((label, data), axis=1)
         total_lst.append(label_add_data)
         # feature_list.append(data[:seq_len])
         # label_list.append(label)
     random.shuffle(total_lst)
     for i in total_lst:
-        feature_list.append(i[1:])
-        label_list.append(i[0])
+        feature_list.append(i[:, 1:])
+        label_list.append(i[0][0])
+    print(feature_list[0].shape)
     feature = np.array(feature_list, dtype=np.float32)
     label = np.array(label_list, dtype=np.float32)
     print('read data is over.')
